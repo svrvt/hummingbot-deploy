@@ -11,7 +11,7 @@ Welcome to the Hummingbot Deploy project. This guide will walk you through the s
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/hummingbot/deploy.git
+   git clone https://github.com/peterwilli/hummingbot-deploy.git --branch=emerald-fund deploy
    cd deploy
    ```
 
