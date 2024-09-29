@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import subprocess
 import traceback
@@ -70,9 +71,18 @@ class StrategyOptimizer:
             database_name (str): Name of the SQLite database for storing optimization results.
             load_cached_data (bool): Whether to load cached backtesting data.
         """
-        self._backtesting_engine = BacktestingEngine(load_cached_data=load_cached_data)
+        self._load_cached_data = load_cached_data
         self._storage_name = storage_name
         self.dashboard_process = None
+        self._backtesting_engine_cache = []
+
+    def update_backtesting_engine_cache(self, n: int):
+        if len(self._backtesting_engine_cache) < n:
+            for i in range(n - len(self._backtesting_engine_cache)):
+                self._backtesting_engine_cache.append(
+                    BacktestingEngine(load_cached_data=self._load_cached_data)
+                )
+        self._backtesting_engine_cache = self._backtesting_engine_cache[:n]
 
     def get_all_study_names(self):
         """
@@ -207,25 +217,40 @@ class StrategyOptimizer:
             backtesting_config: BacktestingConfig = config_generator.generate_config(
                 trial
             )
-
             max_drawdown_pct_list = []
             net_pnl_list = []
-            for idx, date_range in enumerate(backtesting_config.date_ranges):
-                backtesting_result = await self._backtesting_engine.run_backtesting(
-                    backtesting_config.config,
-                    date_range[0],
-                    date_range[1],
-                    backtesting_config.resolution,
-                )
-                strategy_analysis = backtesting_result.results
-                max_drawdown_pct = strategy_analysis["max_drawdown_pct"]
-                net_pnl = strategy_analysis["net_pnl"]
-                max_drawdown_pct_list.append(max_drawdown_pct)
-                net_pnl_list.append(net_pnl)
-                if idx == 0:
-                    trial.set_user_attr(
-                        "config", backtesting_result.controller_config.json()
+            self.update_backtesting_engine_cache(len(backtesting_config.date_ranges))
+
+            async def task(idx, date_range, backtesting_engine):
+                try:
+                    backtesting_result = await backtesting_engine.run_backtesting(
+                        backtesting_config.config,
+                        date_range[0],
+                        date_range[1],
+                        backtesting_config.resolution,
                     )
+                    strategy_analysis = backtesting_result.results
+                    max_drawdown_pct = strategy_analysis["max_drawdown_pct"]
+                    net_pnl = strategy_analysis["net_pnl"]
+                    max_drawdown_pct_list.append(max_drawdown_pct)
+                    net_pnl_list.append(net_pnl)
+                    if idx == 0:
+                        trial.set_user_attr(
+                            "config", backtesting_result.controller_config.json()
+                        )
+                except Exception as e:
+                    print("Task error", traceback.format_exc())
+                    raise e
+
+            tasks = []
+            for idx, (date_range, backtesting_engine) in enumerate(
+                zip(backtesting_config.date_ranges, self._backtesting_engine_cache)
+            ):
+                tasks.append(task(idx, date_range, backtesting_engine))
+
+            # Wait till all tasks are finished
+            await asyncio.gather(*tasks)
+
             net_pnl = sum(net_pnl_list) / len(net_pnl_list)
             max_drawdown_pct = max(max_drawdown_pct_list) / len(max_drawdown_pct_list)
 
