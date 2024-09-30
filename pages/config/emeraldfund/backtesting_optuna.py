@@ -1,18 +1,37 @@
 import asyncio
+import enum
 import json
 import os
+import traceback
 from datetime import datetime, timedelta
+from functools import cmp_to_key
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, Dict, List
-import traceback
+from typing import Any, Dict, List, Optional
+
+from numpy import string_
 import optuna
 import streamlit as st
 from frontend.pages.config.emeraldfund.code_replace import code_replace
 from frontend.pages.config.emeraldfund.core.utils import (
     create_slices_of_start_end_date,
 )
+from frontend.pages.config.emeraldfund.hyperrankrank import hyperrankrank
 from frontend.st_utils import get_backend_api_client
+from optuna.trial import FrozenTrial
+from plotly.basedatatypes import itertools
+from frontend.pages.config.emeraldfund.utils import prepare_install
+
+prepare_install("streamlit-sortables", "streamlit_sortables")
+from streamlit_sortables import sort_items
+
+objective_to_name = {
+    "max_drawdown_pct": "Max Drawdown",
+    "speed": "Time in seconds",
+    "net_pnl": "Profit",
+}
+
+objective_name_to_objective = {v: k for k, v in objective_to_name.items()}
 
 
 def render_save_best_trial_config(config_base_default: str, config_data: dict):
@@ -55,6 +74,8 @@ async def run_optimization_fn(
     processor,
     inputs,
     locks,
+    hyperrankrank_order: List[str],
+    hyperrankrank_k: int,
     objectives,
     storage_path: Path,
     amount_of_trials: int,
@@ -220,11 +241,39 @@ async def run_optimization_fn(
     )
     study = optimizer._create_study(study_name, load_if_exists=True)
     study_bar = st.progress(0, "Running study...")
-
+    trial_status = st.empty()
+    trial_status_header = (
+        " | "
+        + " | ".join(
+            map(
+                lambda x: f"Rank {x[0] + 1}: {objective_to_name[x[1]]}",
+                enumerate(objectives),
+            )
+        )
+        + " | \n"
+    )
+    trial_status_header += " | " + (" | ----- |" * len(objectives)) + " | "
     if add_current_configuration:
         study.enqueue_trial(config_generator.get_current_trial_params())
 
-    stats_str = None
+    sorters = {
+        "max_drawdown_pct": cmp_to_key(
+            lambda x, y: y.values[objectives.index("max_drawdown_pct")]
+            - x.values[objectives.index("max_drawdown_pct")]
+        ),
+        "speed": cmp_to_key(
+            lambda x, y: x.values[objectives.index("speed")]
+            - y.values[objectives.index("speed")]
+        ),
+        "net_pnl": cmp_to_key(
+            lambda x, y: y.values[objectives.index("net_pnl")]
+            - x.values[objectives.index("net_pnl")]
+        ),
+    }
+
+    hyperrankrank_sorters = list(map(lambda x: sorters[x], hyperrankrank_order))
+    best_trials = None
+
     for i in range(amount_of_trials):
         trial = study.ask()
         try:
@@ -232,33 +281,47 @@ async def run_optimization_fn(
             value = await optimizer._async_objective(trial, config_generator)
             # Report the result back to the study
             study.tell(trial, value)
-        except Exception as e:
+        except Exception:
             print(f"Error in study: {traceback.format_exc()}")  # noqa: F821
             study.tell(trial, state=optuna.trial.TrialState.FAIL)
 
-        trial_with_best_max_drawdown = max(study.best_trials, key=lambda t: t.values[1])
-        stats = []
-        for idx, obj in enumerate(objectives):
-            if obj == "net_pnl":
-                stats.append(f"Profit: {trial_with_best_max_drawdown.values[idx]:.4f}%")
-            if obj == "max_drawdown_pct":
-                stats.append(
-                    f"Max Drawdown: {trial_with_best_max_drawdown.values[idx]:.4f}%"
-                )
-            if obj == "speed":
-                stats.append(
-                    f"Speed: {trial_with_best_max_drawdown.values[idx]:.4f} seconds"
-                )
-        stats_str = " | ".join(stats)
         study_bar.progress(
             i / amount_of_trials,
-            f"Running study {i + 1} / {amount_of_trials}... {stats_str}",
+            f"Running study {i + 1} / {amount_of_trials}...",
         )
-    study_bar.progress(1.0, f"Done! Best: {stats_str}")
-    trial_with_best_max_drawdown = max(study.best_trials, key=lambda t: t.values[1])
+        best_trials = hyperrankrank(
+            list(
+                filter(
+                    lambda x: x is not None and x.values is not None,
+                    study.get_trials(deepcopy=False),
+                )
+            ),
+            hyperrankrank_k,
+            hyperrankrank_sorters,
+            breakdown=True,
+        )
+
+        def trial_to_string(trial: Optional[FrozenTrial]) -> str:
+            if trial is None:
+                return ""
+            trial_str = []
+            for idx, objective in enumerate(objectives):
+                trial_str.append(
+                    f"{objective_to_name[objective]}: {trial.values[idx]:.2f}"
+                )
+            return ", ".join(trial_str)
+
+        trial_status_rows = []
+        for trials in itertools.zip_longest(*best_trials):
+            string_trials = list(map(trial_to_string, trials))
+            trial_status_rows.append(" | " + " | ".join(string_trials) + " | ")
+        trial_status.write(trial_status_header + "\n" + "\n".join(trial_status_rows))
+
+    study_bar.progress(1.0, "Done!")
+    best_trial = best_trials[-1][0]
     render_save_best_trial_config(
         st.session_state["default_config"]["id"],
-        json.loads(trial_with_best_max_drawdown.user_attrs["config"]),
+        json.loads(best_trial.user_attrs["config"]),
     )
 
 
@@ -361,15 +424,17 @@ def optuna_section(inputs, backend_api_client, processor):
         c1, c2, c3 = st.columns(3)
         with c1:
             objective_net_pnl = st.checkbox(
-                "Net PNL", value=True, key="EMOptunaObjectiveNetPNL"
+                objective_to_name["net_pnl"], value=True, key="EMOptunaObjectiveNetPNL"
             )
         with c2:
             objective_max_drawdown = st.checkbox(
-                "Max Drawdown", value=True, key="EMOptunaObjectiveMaxDrawdown"
+                objective_to_name["max_drawdown_pct"],
+                value=True,
+                key="EMOptunaObjectiveMaxDrawdown",
             )
         with c3:
             objective_speed = st.checkbox(
-                "Speed", value=False, key="EMOptunaObjectiveSpeed"
+                objective_to_name["speed"], value=False, key="EMOptunaObjectiveSpeed"
             )
 
         objectives = []
@@ -379,7 +444,15 @@ def optuna_section(inputs, backend_api_client, processor):
             objectives.append("max_drawdown_pct")
         if objective_speed:
             objectives.append("speed")
+        st.write("**Objective importance order**")
+        st.write("Move to the left what is most important for you")
 
+        hyperrankrank_order = sort_items(
+            list(map(lambda x: objective_to_name[x], objectives))
+        )
+        hyperrankrank_k = st.number_input(
+            "Rank size (Higher means more variation)", value=2, key="EMRankSize"
+        )
     locks = {}
     with st.expander("Locks 🔒"):
         st.write(
@@ -442,9 +515,13 @@ def optuna_section(inputs, backend_api_client, processor):
                 processor,
                 inputs,
                 locks,
+                list(
+                    map(lambda x: objective_name_to_objective[x], hyperrankrank_order)
+                ),
+                hyperrankrank_k,
                 objectives,
                 storage_path,
-                amount_of_trials,
+                int(amount_of_trials),
                 sections,
                 add_current_configuration,
             )

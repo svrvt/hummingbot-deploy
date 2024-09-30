@@ -7,22 +7,10 @@ from frontend.components.market_making_general_inputs import (
     get_market_making_general_inputs,
 )
 from frontend.components.risk_management import get_risk_management_inputs
-import importlib.util
 
-# Check if the module exists
-if importlib.util.find_spec("code_editor") is None:
-    # Install the module using pip
-    import subprocess
-    import sys
+from frontend.pages.config.emeraldfund.utils import prepare_install
 
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "streamlit_code_editor"]
-    )
-
-    # Reload the module
-    import importlib
-
-    importlib.reload(importlib.util)
+prepare_install("streamlit_code_editor", "code_editor")
 
 from code_editor import code_editor
 from frontend.pages.config.emeraldfund.ai_input import ai_input
