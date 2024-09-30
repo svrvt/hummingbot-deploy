@@ -1,21 +1,18 @@
 import asyncio
 import json
 import os
-from textwrap import dedent
-from datetime import datetime, timedelta, date
-from io import StringIO
+from datetime import datetime, timedelta
 from pathlib import Path
-from collections import OrderedDict
-from typing import List
-import numpy as np
+from textwrap import dedent
+from typing import Any, Dict, List
+import traceback
 import optuna
 import streamlit as st
 from frontend.pages.config.emeraldfund.code_replace import code_replace
-from frontend.st_utils import get_backend_api_client
-from ruamel import yaml
 from frontend.pages.config.emeraldfund.core.utils import (
     create_slices_of_start_end_date,
 )
+from frontend.st_utils import get_backend_api_client
 
 
 def render_save_best_trial_config(config_base_default: str, config_data: dict):
@@ -53,13 +50,16 @@ def render_save_best_trial_config(config_base_default: str, config_data: dict):
         st.button("Upload", key="EMTrialUploadConfig", on_click=on_upload_click)
 
 
-async def run_backtesting_fn(
+async def run_optimization_fn(
     study_name: str,
     processor,
     inputs,
+    locks,
+    objectives,
     storage_path: Path,
     amount_of_trials: int,
     date_ranges: List[List[int]],
+    add_current_configuration: bool,
 ):
     import sys
 
@@ -71,20 +71,45 @@ async def run_backtesting_fn(
     from controllers.directional_trading.directional_emeraldfund import (
         DirectionalEmeraldFundControllerConfig,
     )
+    from hummingbot.strategy_v2.executors.position_executor.data_types import (
+        TrailingStop,
+    )
+
     from core.backtesting.optimizer import (
         BacktestingConfig,
         BaseStrategyConfigGenerator,
         StrategyOptimizer,
     )
-    from hummingbot.strategy_v2.executors.position_executor.data_types import (
-        TrailingStop,
-    )
 
     class EmeraldFundConfigGenerator(BaseStrategyConfigGenerator):
-        def __init__(self, date_ranges, processor, inputs):
+        def __init__(self, date_ranges, processor, inputs, locks):
             super().__init__(date_ranges)
             self.processor = processor
             self.inputs = inputs
+            self.locks = locks
+
+        def get_current_trial_params(self) -> Dict[str, Any]:
+            result = {}
+            inputs = self.inputs
+            processor = self.processor
+            parameters = processor.get_parameters()
+            for k in parameters:
+                param = parameters[k]
+                result[k] = param["current"]
+            result.update(inputs)
+            result["trailing_stop_activation_price"] = inputs["trailing_stop"][
+                "activation_price"
+            ]
+            result["trailing_stop_trailing_delta"] = inputs["trailing_stop"][
+                "trailing_delta"
+            ]
+            return result
+
+        def check_lock(self, k, x, fn):
+            if self.locks[k]:
+                return x
+            else:
+                return fn()
 
         def generate_config(self, trial) -> BacktestingConfig:
             inputs = self.inputs
@@ -98,31 +123,65 @@ async def run_backtesting_fn(
                 if kt is int:
                     param["current"] = trial.suggest_int(k, param_min, param_max)
                 elif kt is float:
-                    param["current"] = trial.suggest_float(k, param_min, param_max)
+                    step = None
+                    if "step" in param:
+                        step = param["step"]
+                    param["current"] = trial.suggest_float(
+                        k, param_min, param_max, step=step
+                    )
                 elif kt is str:
                     param["current"] = trial.suggest_categorical(k, param["choices"])
                 else:
                     raise ValueError(f"unknown type {kt}")
 
             processor_code = code_replace(inputs["processor_code"], parameters)
-            max_executors_per_side = trial.suggest_int("max_executors_per_side", 1, 10)
-            take_profit = trial.suggest_float("take_profit", 0.01, 0.5, step=0.01)
-            stop_loss = trial.suggest_float("stop_loss", 0.01, 0.1, step=0.01)
-            trailing_stop_activation_price = trial.suggest_float(
-                "trailing_stop_activation_price", 0.005, 0.05, step=0.001
+            max_executors_per_side = self.check_lock(
+                "max_executors_per_side",
+                inputs["max_executors_per_side"],
+                lambda: trial.suggest_int("max_executors_per_side", 1, 10),
             )
-            trailing_delta_ratio = trial.suggest_float(
-                "trailing_delta_ratio", 0.01, 0.5, step=0.01
+            take_profit = self.check_lock(
+                "take_profit",
+                inputs["take_profit"],
+                lambda: trial.suggest_float("take_profit", 0.01, 0.5, step=0.01),
             )
-            trailing_stop_trailing_delta = (
-                trailing_stop_activation_price * trailing_delta_ratio
+            stop_loss = self.check_lock(
+                "stop_loss",
+                inputs["stop_loss"],
+                lambda: trial.suggest_float("stop_loss", 0.01, 0.1, step=0.01),
             )
-            time_limit = trial.suggest_int("time_limit", 60, 60 * 60 * 24, step=60)
-            cooldown_time = trial.suggest_int(
-                "cooldown_time", 60, 60 * 60 * 12, step=60
+            trailing_stop_activation_price = self.check_lock(
+                "trailing_stop_activation_price",
+                inputs["trailing_stop"]["activation_price"],
+                lambda: trial.suggest_float(
+                    "trailing_stop_activation_price", 0.005, 0.05, step=0.001
+                ),
             )
-            interval = trial.suggest_categorical(
-                "interval", ["1m", "3m", "5m", "15m", "1h"]
+            trailing_stop_trailing_delta = self.check_lock(
+                "trailing_stop_trailing_delta",
+                inputs["trailing_stop"]["trailing_delta"],
+                lambda: trial.suggest_float(
+                    "trailing_stop_trailing_delta",
+                    max(0.001, trailing_stop_activation_price * 0.01),
+                    max(0.01, trailing_stop_activation_price * 0.9),
+                ),
+            )
+            time_limit = self.check_lock(
+                "time_limit",
+                inputs["time_limit"],
+                lambda: trial.suggest_int("time_limit", 60, 60 * 60 * 24, step=60),
+            )
+            cooldown_time = self.check_lock(
+                "cooldown_time",
+                inputs["cooldown_time"],
+                lambda: trial.suggest_int("cooldown_time", 60, 60 * 60 * 12, step=60),
+            )
+            interval = self.check_lock(
+                "interval",
+                inputs["interval"],
+                lambda: trial.suggest_categorical(
+                    "interval", ["1m", "3m", "5m", "15m", "1h"]
+                ),
             )
 
             # Create the strategy configuration
@@ -152,37 +211,50 @@ async def run_backtesting_fn(
             )
 
     config_generator = EmeraldFundConfigGenerator(
-        date_ranges=date_ranges, processor=processor, inputs=inputs
+        date_ranges=date_ranges, processor=processor, inputs=inputs, locks=locks
     )
 
     sqlite_path = storage_path / Path("studies.db")
-    optimizer = StrategyOptimizer(storage_name=f"sqlite:///{sqlite_path}")
+    optimizer = StrategyOptimizer(
+        storage_name=f"sqlite:///{sqlite_path}", objectives=objectives
+    )
     study = optimizer._create_study(study_name, load_if_exists=True)
     study_bar = st.progress(0, "Running study...")
+
+    if add_current_configuration:
+        study.enqueue_trial(config_generator.get_current_trial_params())
+
+    stats_str = None
     for i in range(amount_of_trials):
         trial = study.ask()
-        if i > 0:
-            trial_with_best_max_drawdown = max(
-                study.best_trials, key=lambda t: t.values[1]
-            )
-            study_bar.progress(
-                i / amount_of_trials,
-                f"Running study... Best profit so far: {trial_with_best_max_drawdown.values[1]:.4f}%. Max Drawdown: {trial_with_best_max_drawdown.values[0]:.4f}%",
-            )
-        else:
-            study_bar.progress(
-                i / amount_of_trials,
-                "Running study...",
-            )
         try:
             # Run the async objective function and get the result
             value = await optimizer._async_objective(trial, config_generator)
             # Report the result back to the study
             study.tell(trial, value)
         except Exception as e:
-            print(f"Error in _optimize_async: {str(e)}")
+            print(f"Error in study: {traceback.format_exc()}")  # noqa: F821
             study.tell(trial, state=optuna.trial.TrialState.FAIL)
-    study_bar.progress(1.0, "Done!")
+
+        trial_with_best_max_drawdown = max(study.best_trials, key=lambda t: t.values[1])
+        stats = []
+        for idx, obj in enumerate(objectives):
+            if obj == "net_pnl":
+                stats.append(f"Profit: {trial_with_best_max_drawdown.values[idx]:.4f}%")
+            if obj == "max_drawdown_pct":
+                stats.append(
+                    f"Max Drawdown: {trial_with_best_max_drawdown.values[idx]:.4f}%"
+                )
+            if obj == "speed":
+                stats.append(
+                    f"Speed: {trial_with_best_max_drawdown.values[idx]:.4f} seconds"
+                )
+        stats_str = " | ".join(stats)
+        study_bar.progress(
+            i / amount_of_trials,
+            f"Running study {i + 1} / {amount_of_trials}... {stats_str}",
+        )
+    study_bar.progress(1.0, f"Done! Best: {stats_str}")
     trial_with_best_max_drawdown = max(study.best_trials, key=lambda t: t.values[1])
     render_save_best_trial_config(
         st.session_state["default_config"]["id"],
@@ -232,11 +304,6 @@ def optuna_section(inputs, backend_api_client, processor):
         value=False,
     )
 
-    with c3:
-        amount_of_trials = st.number_input(
-            "Amount of Trials", value=1000, key="EMOptunaAmountOfTrials"
-        )
-
     if break_up_sections:
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -272,8 +339,8 @@ def optuna_section(inputs, backend_api_client, processor):
                 f"{idx + 1} | {start_date} | {end_date} | {days} | {total_days}\n"
             )
 
-        print(sections_table)
         st.write(sections_table)
+        st.write("\n")
     else:
         sections = [
             [
@@ -281,15 +348,104 @@ def optuna_section(inputs, backend_api_client, processor):
                 int(datetime.combine(end_date, datetime.min.time()).timestamp()),
             ]
         ]
-    run_backtesting = st.button("Run Optimization")
-    if run_backtesting:
+
+    with c3:
+        amount_of_trials = st.number_input(
+            "Amount of Trials", value=1000, key="EMOptunaAmountOfTrials"
+        )
+
+    with st.expander("Objectives 📈"):
+        st.write(
+            "Objectives give you a custom direction to which your strategy is to be optimized."
+        )
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            objective_net_pnl = st.checkbox(
+                "Net PNL", value=True, key="EMOptunaObjectiveNetPNL"
+            )
+        with c2:
+            objective_max_drawdown = st.checkbox(
+                "Max Drawdown", value=True, key="EMOptunaObjectiveMaxDrawdown"
+            )
+        with c3:
+            objective_speed = st.checkbox(
+                "Speed", value=False, key="EMOptunaObjectiveSpeed"
+            )
+
+        objectives = []
+        if objective_net_pnl:
+            objectives.append("net_pnl")
+        if objective_max_drawdown:
+            objectives.append("max_drawdown_pct")
+        if objective_speed:
+            objectives.append("speed")
+
+    locks = {}
+    with st.expander("Locks 🔒"):
+        st.write(
+            "Locks will make sure that selected variables will not change during optimization. If you have any preferences such as a certain risk management that you dont want to change, this is where you can do it!"
+        )
+
+        lock_all_btn = st.button(
+            "Lock all",
+            key="EMLockAllBtn",
+        )
+        if lock_all_btn:
+            st.session_state.EMTrailingStopActPriceLock = True
+            st.session_state.EMTrailingStopDeltaLock = True
+            st.session_state.EMTakeProfitLock = True
+            st.session_state.EMStopLossLock = True
+            st.session_state.EMMaxExecutorsPerSideLock = True
+            st.session_state.EMIntervalLock = True
+            st.session_state.EMTimeLimitLock = True
+            st.session_state.EMCooldownTimeLock = True
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            locks["trailing_stop_activation_price"] = st.checkbox(
+                "Trailing Stop Act. Price",
+                key="EMTrailingStopActPriceLock",
+            )
+            locks["trailing_stop_trailing_delta"] = st.checkbox(
+                "Trailing Stop Delta",
+                key="EMTrailingStopDeltaLock",
+            )
+        with c2:
+            locks["take_profit"] = st.checkbox("Take Profit", key="EMTakeProfitLock")
+            locks["stop_loss"] = st.checkbox("Stop Loss", key="EMStopLossLock")
+        with c3:
+            locks["max_executors_per_side"] = st.checkbox(
+                "Max Executors Per Side",
+                key="EMMaxExecutorsPerSideLock",
+            )
+            locks["interval"] = st.checkbox("Interval", key="EMIntervalLock")
+            locks["time_limit"] = st.checkbox("Time Limit", key="EMTimeLimitLock")
+            locks["cooldown_time"] = st.checkbox(
+                "Cooldown Time", key="EMCooldownTimeLock"
+            )
+
+    add_current_configuration = st.checkbox(
+        "Add current configuration to study",
+        key="EMOptunaAddCurrentConfiguration",
+        value=False,
+    )
+    run_optimization = st.button("Run Optimization")
+    if run_optimization:
         if len(study_name) == 0:
             raise ValueError("Study name is required")
         dir_path = os.path.dirname(os.path.realpath(__file__))
         storage_path = Path(dir_path) / Path("data")
         storage_path.mkdir(parents=True, exist_ok=True)
         asyncio.run(
-            run_backtesting_fn(
-                study_name, processor, inputs, storage_path, amount_of_trials, sections
+            run_optimization_fn(
+                study_name,
+                processor,
+                inputs,
+                locks,
+                objectives,
+                storage_path,
+                amount_of_trials,
+                sections,
+                add_current_configuration,
             )
         )

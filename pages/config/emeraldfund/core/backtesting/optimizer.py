@@ -1,5 +1,5 @@
 import asyncio
-import datetime
+import time
 import subprocess
 import traceback
 from abc import ABC, abstractmethod
@@ -61,6 +61,7 @@ class StrategyOptimizer:
     def __init__(
         self,
         storage_name: str,
+        objectives: List[str],
         load_cached_data: bool = False,
     ):
         """
@@ -75,6 +76,7 @@ class StrategyOptimizer:
         self._storage_name = storage_name
         self.dashboard_process = None
         self._backtesting_engine_cache = []
+        self._objectives = objectives
 
     def update_backtesting_engine_cache(self, n: int):
         if len(self._backtesting_engine_cache) < n:
@@ -145,8 +147,15 @@ class StrategyOptimizer:
         Returns:
             optuna.Study: The created or loaded study.
         """
+        objectives_to_direction = {
+            "speed": "minimize",
+            "max_drawdown_pct": "maximize",
+            "net_pnl": "maximize",
+        }
         return optuna.create_study(
-            directions=["maximize", "maximize"],
+            directions=list(
+                map(lambda x: objectives_to_direction[x], self._objectives)
+            ),
             study_name=study_name,
             storage=self._storage_name,
             load_if_exists=load_if_exists,
@@ -201,7 +210,7 @@ class StrategyOptimizer:
 
     async def _async_objective(
         self, trial: optuna.Trial, config_generator: Type[BaseStrategyConfigGenerator]
-    ) -> Tuple[float, float]:
+    ) -> List[float]:
         """
         The asynchronous objective function for a given trial.
 
@@ -248,20 +257,30 @@ class StrategyOptimizer:
             ):
                 tasks.append(task(idx, date_range, backtesting_engine))
 
+            start = time.time()
             # Wait till all tasks are finished
             await asyncio.gather(*tasks)
+            end = time.time()
 
-            net_pnl = sum(net_pnl_list) / len(net_pnl_list)
-            max_drawdown_pct = max(max_drawdown_pct_list) / len(max_drawdown_pct_list)
-
-            # Return the value you want to optimize
-            return max_drawdown_pct, net_pnl
+            result = []
+            for objective in self._objectives:
+                if objective == "net_pnl":
+                    net_pnl = sum(net_pnl_list) / len(net_pnl_list)
+                    result.append(net_pnl)
+                elif objective == "max_drawdown_pct":
+                    max_drawdown_pct = max(max_drawdown_pct_list) / len(
+                        max_drawdown_pct_list
+                    )
+                    result.append(max_drawdown_pct)
+                elif objective == "speed":
+                    speed = end - start
+                    result.append(speed)
+            return result
         except Exception as e:
             print(f"An error occurred during optimization: {str(e)}")
             traceback.print_exc()
-            return float("-inf"), float(
-                "-inf"
-            )  # Return a very low value to indicate failure
+            # Return a very low value to indicate failure
+            return list(map(lambda _: float("-inf"), self._objectives))
 
     def launch_optuna_dashboard(self):
         """

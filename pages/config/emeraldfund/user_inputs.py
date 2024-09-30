@@ -10,7 +10,7 @@ from frontend.components.risk_management import get_risk_management_inputs
 import importlib.util
 
 # Check if the module exists
-if importlib.util.find_spec("streamlit_code_editor") is None:
+if importlib.util.find_spec("code_editor") is None:
     # Install the module using pip
     import subprocess
     import sys
