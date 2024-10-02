@@ -1,5 +1,5 @@
-from typing import List
 import random
+from typing import List, Optional
 
 
 def round_to_nearest_day(timestamp):
@@ -7,7 +7,12 @@ def round_to_nearest_day(timestamp):
 
 
 def create_slices_of_start_end_date(
-    start: int, end: int, amount_of_slices: int, days_gap: int, jitter: int = 0
+    start: int,
+    end: int,
+    amount_of_slices: int,
+    days_gap: int,
+    jitter: int = 0,
+    seed: Optional[int] = None,
 ) -> List[List[int]]:
     """
     Creates even sections between the start and end date with optional jitter.
@@ -18,10 +23,14 @@ def create_slices_of_start_end_date(
     amount_of_slices (int): The number of slices to create.
     days_gap (int): The gap in days between each slice.
     jitter (int, optional): The maximum number of days to randomly add or subtract from each slice. Defaults to 0.
+    seed (int, optional): The seed to use for the random number generator. Defaults to None.
 
     Returns:
     List[List[int]]: A list of slices, where each slice is a list containing the start and end date.
     """
+
+    # Initialize the random number generator
+    rng = random.Random(seed)
 
     # Calculate the total duration
     total_duration = end - start
@@ -56,8 +65,8 @@ def create_slices_of_start_end_date(
         # Apply jitter to the slice
         if jitter > 0:
             jitter_in_seconds = jitter * 86400
-            current_start += random.randint(-jitter_in_seconds, jitter_in_seconds)
-            current_end += random.randint(-jitter_in_seconds, jitter_in_seconds)
+            current_start += rng.randint(-jitter_in_seconds, jitter_in_seconds)
+            current_end += rng.randint(-jitter_in_seconds, jitter_in_seconds)
 
         # Ensure the start date is before the end date
         if current_start >= current_end:
@@ -74,4 +83,3 @@ def create_slices_of_start_end_date(
         current_start = current_end + days_gap * 86400
 
     return slices
-

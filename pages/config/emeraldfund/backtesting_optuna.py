@@ -2,6 +2,7 @@ import asyncio
 import enum
 import json
 import os
+import random
 import traceback
 from datetime import datetime, timedelta
 from functools import cmp_to_key
@@ -34,7 +35,9 @@ objective_to_name = {
 objective_name_to_objective = {v: k for k, v in objective_to_name.items()}
 
 
-def render_save_best_trial_config(config_base_default: str, config_data: dict):
+def render_save_best_trial_config(
+    config_base_default: str, trials: List[FrozenTrial], objectives
+):
     st.write("### Save the best config")
     backend_api_client = get_backend_api_client()
     all_configs = backend_api_client.get_all_controllers_config()
@@ -56,17 +59,33 @@ def render_save_best_trial_config(config_base_default: str, config_data: dict):
             "Config Base", value=config_base, key="EMTrialConfigBase"
         )
     with c2:
+        trial_index = st.selectbox(
+            "Trial number",
+            options=range(len(trials)),
+            format_func=lambda x: trial_to_string(trials[x], objectives),
+        )
         config_tag = st.text_input(
             "Config Tag", value=config_tag, key="EMTrialConfigTag"
         )
     with c3:
 
         def on_upload_click():
+            config_data = json.loads(trials[trial_index].user_attrs["config"])
             config_data["id"] = f"{config_base}_{config_tag}"
             backend_api_client.add_controller_config(config_data)
+            st.session_state.EMBestTrials = None
             st.success("Config uploaded successfully!")
 
         st.button("Upload", key="EMTrialUploadConfig", on_click=on_upload_click)
+
+
+def trial_to_string(trial: Optional[FrozenTrial], objectives) -> str:
+    if trial is None:
+        return ""
+    trial_str = []
+    for idx, objective in enumerate(objectives):
+        trial_str.append(f"{objective_to_name[objective]}: {trial.values[idx]:.2f}")
+    return ", ".join(trial_str)
 
 
 async def run_optimization_fn(
@@ -273,6 +292,7 @@ async def run_optimization_fn(
 
     hyperrankrank_sorters = list(map(lambda x: sorters[x], hyperrankrank_order))
     best_trials = None
+    trial_status_table = None
 
     for i in range(amount_of_trials):
         trial = study.ask()
@@ -300,29 +320,19 @@ async def run_optimization_fn(
             hyperrankrank_sorters,
             breakdown=True,
         )
-
-        def trial_to_string(trial: Optional[FrozenTrial]) -> str:
-            if trial is None:
-                return ""
-            trial_str = []
-            for idx, objective in enumerate(objectives):
-                trial_str.append(
-                    f"{objective_to_name[objective]}: {trial.values[idx]:.2f}"
-                )
-            return ", ".join(trial_str)
-
         trial_status_rows = []
         for trials in itertools.zip_longest(*best_trials):
-            string_trials = list(map(trial_to_string, trials))
+            string_trials = list(map(lambda x: trial_to_string(x, objectives), trials))
             trial_status_rows.append(" | " + " | ".join(string_trials) + " | ")
-        trial_status.write(trial_status_header + "\n" + "\n".join(trial_status_rows))
+        trial_status_table = trial_status_header + "\n" + "\n".join(trial_status_rows)
+        trial_status.write(trial_status_table)
 
     study_bar.progress(1.0, "Done!")
-    best_trial = best_trials[-1][0]
-    render_save_best_trial_config(
-        st.session_state["default_config"]["id"],
-        json.loads(best_trial.user_attrs["config"]),
-    )
+    st.session_state.EMBestTrials = {
+        "trials": best_trials[-1],
+        "final_status": trial_status_table,
+    }
+    trial_status.write("")
 
 
 def optuna_section(inputs, backend_api_client, processor):
@@ -375,6 +385,9 @@ def optuna_section(inputs, backend_api_client, processor):
             break_up_gap = st.number_input(
                 "Gap in days between sections", key="EMOptunaBreakUpGap", value=0
             )
+        seed = st.session_state.get("EMRngSeed", random.randint(0, 2**32))
+        if "EMRngSeed" not in st.session_state:
+            st.session_state.EMRngSeed = seed
         with c3:
             jitter = st.number_input("Jitter", key="EMOptunaJitter", value=0)
         sections = create_slices_of_start_end_date(
@@ -383,6 +396,7 @@ def optuna_section(inputs, backend_api_client, processor):
             amount_of_sections,
             break_up_gap,
             jitter,
+            seed=seed,
         )
         sections_table = dedent("""
         | Section # | Start Date | End Date | Days | Total Days |
@@ -451,7 +465,7 @@ def optuna_section(inputs, backend_api_client, processor):
             list(map(lambda x: objective_to_name[x], objectives))
         )
         hyperrankrank_k = st.number_input(
-            "Rank size (Higher means more variation)", value=2, key="EMRankSize"
+            "Rank size (Higher means more variation)", value=3, key="EMRankSize"
         )
     locks = {}
     with st.expander("Locks 🔒"):
@@ -506,6 +520,7 @@ def optuna_section(inputs, backend_api_client, processor):
     if run_optimization:
         if len(study_name) == 0:
             raise ValueError("Study name is required")
+        st.session_state.EMBestTrials = None
         dir_path = os.path.dirname(os.path.realpath(__file__))
         storage_path = Path(dir_path) / Path("data")
         storage_path.mkdir(parents=True, exist_ok=True)
@@ -525,4 +540,11 @@ def optuna_section(inputs, backend_api_client, processor):
                 sections,
                 add_current_configuration,
             )
+        )
+    if st.session_state.get("EMBestTrials", None) is not None:
+        st.write(st.session_state.EMBestTrials["final_status"])
+        render_save_best_trial_config(
+            st.session_state["default_config"]["id"],
+            st.session_state.EMBestTrials["trials"],
+            objectives,
         )

@@ -47,11 +47,7 @@ get_default_config_loader("directional_emeraldfund")
 # Get user inputs
 inputs = user_inputs("directional")
 st.session_state["default_config"].update(inputs)
-st.write("### Visualizing MACD and NATR indicators for PMM Emerald Fund")
-st.text(
-    "The MACD is used to shift the mid price and the NATR to make the spreads dynamic. "
-    "In the order distributions graph, we are going to see the values of the orders affected by the average NATR"
-)
+st.write("### Visualize")
 days_to_visualize = st.number_input(
     "Days to Visualize", min_value=1, max_value=365, value=3
 )
