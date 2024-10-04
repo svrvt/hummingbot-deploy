@@ -27,9 +27,9 @@ prepare_install("streamlit-sortables", "streamlit_sortables")
 from streamlit_sortables import sort_items
 
 objective_to_name = {
+    "net_pnl": "Profit",
     "max_drawdown_pct": "Max Drawdown",
     "speed": "Time in seconds",
-    "net_pnl": "Profit",
 }
 
 objective_name_to_objective = {v: k for k, v in objective_to_name.items()}
@@ -60,7 +60,7 @@ def render_save_best_trial_config(
         )
     with c2:
         trial_index = st.selectbox(
-            "Trial number",
+            "Trial",
             options=range(len(trials)),
             format_func=lambda x: trial_to_string(trials[x], objectives),
         )
@@ -83,8 +83,10 @@ def trial_to_string(trial: Optional[FrozenTrial], objectives) -> str:
     if trial is None:
         return ""
     trial_str = []
-    for idx, objective in enumerate(objectives):
-        trial_str.append(f"{objective_to_name[objective]}: {trial.values[idx]:.2f}")
+    for objective in objectives:
+        trial_str.append(
+            f"{objective_to_name[objective]}: {trial.user_attrs[objective]:.2f}"
+        )
     return ", ".join(trial_str)
 
 
@@ -266,27 +268,23 @@ async def run_optimization_fn(
         + " | ".join(
             map(
                 lambda x: f"Rank {x[0] + 1}: {objective_to_name[x[1]]}",
-                enumerate(objectives),
+                enumerate(hyperrankrank_order),
             )
         )
         + " | \n"
     )
-    trial_status_header += " | " + (" | ----- |" * len(objectives)) + " | "
+    trial_status_header += " | " + (" | ----- |" * len(hyperrankrank_order)) + " | "
     if add_current_configuration:
         study.enqueue_trial(config_generator.get_current_trial_params())
 
     sorters = {
         "max_drawdown_pct": cmp_to_key(
-            lambda x, y: y.values[objectives.index("max_drawdown_pct")]
-            - x.values[objectives.index("max_drawdown_pct")]
+            lambda x, y: y.user_attrs["max_drawdown_pct"]
+            - x.user_attrs["max_drawdown_pct"]
         ),
-        "speed": cmp_to_key(
-            lambda x, y: x.values[objectives.index("speed")]
-            - y.values[objectives.index("speed")]
-        ),
+        "speed": cmp_to_key(lambda x, y: x.user_attrs["speed"] - y.user_attrs["speed"]),
         "net_pnl": cmp_to_key(
-            lambda x, y: y.values[objectives.index("net_pnl")]
-            - x.values[objectives.index("net_pnl")]
+            lambda x, y: y.user_attrs["net_pnl"] - x.user_attrs["net_pnl"]
         ),
     }
 
@@ -312,7 +310,7 @@ async def run_optimization_fn(
         best_trials = hyperrankrank(
             list(
                 filter(
-                    lambda x: x is not None and x.values is not None,
+                    lambda x: all([k in x.user_attrs for k in hyperrankrank_order]),
                     study.get_trials(deepcopy=False),
                 )
             ),
@@ -322,7 +320,9 @@ async def run_optimization_fn(
         )
         trial_status_rows = []
         for trials in itertools.zip_longest(*best_trials):
-            string_trials = list(map(lambda x: trial_to_string(x, objectives), trials))
+            string_trials = list(
+                map(lambda x: trial_to_string(x, hyperrankrank_order), trials)
+            )
             trial_status_rows.append(" | " + " | ".join(string_trials) + " | ")
         trial_status_table = trial_status_header + "\n" + "\n".join(trial_status_rows)
         trial_status.write(trial_status_table)
@@ -428,7 +428,7 @@ def optuna_section(inputs, backend_api_client, processor):
 
     with c3:
         amount_of_trials = st.number_input(
-            "Amount of Trials", value=1000, key="EMOptunaAmountOfTrials"
+            "Amount of Trials", value=1000, min_value=1, key="EMOptunaAmountOfTrials"
         )
 
     with st.expander("Objectives 📈"):
@@ -461,8 +461,9 @@ def optuna_section(inputs, backend_api_client, processor):
         st.write("**Objective importance order**")
         st.write("Move to the left what is most important for you")
 
-        hyperrankrank_order = sort_items(
-            list(map(lambda x: objective_to_name[x], objectives))
+        hyperrankrank_order = sort_items(list(objective_to_name.values()))
+        hyperrankrank_order = list(
+            map(lambda x: objective_name_to_objective[x], hyperrankrank_order)
         )
         hyperrankrank_k = st.number_input(
             "Rank size (Higher means more variation)", value=3, key="EMRankSize"
@@ -530,9 +531,7 @@ def optuna_section(inputs, backend_api_client, processor):
                 processor,
                 inputs,
                 locks,
-                list(
-                    map(lambda x: objective_name_to_objective[x], hyperrankrank_order)
-                ),
+                hyperrankrank_order,
                 hyperrankrank_k,
                 objectives,
                 storage_path,
@@ -546,5 +545,5 @@ def optuna_section(inputs, backend_api_client, processor):
         render_save_best_trial_config(
             st.session_state["default_config"]["id"],
             st.session_state.EMBestTrials["trials"],
-            objectives,
+            hyperrankrank_order,
         )

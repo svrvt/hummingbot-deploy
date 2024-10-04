@@ -263,18 +263,20 @@ class StrategyOptimizer:
             end = time.time()
 
             result = []
+            net_pnl = sum(net_pnl_list) / len(net_pnl_list)
+            max_drawdown_pct = max(max_drawdown_pct_list) / len(max_drawdown_pct_list)
+            speed = end - start
+            trial.set_user_attr("net_pnl", net_pnl)
+            trial.set_user_attr("max_drawdown_pct", max_drawdown_pct)
+            trial.set_user_attr("speed", speed)
             for objective in self._objectives:
                 if objective == "net_pnl":
-                    net_pnl = sum(net_pnl_list) / len(net_pnl_list)
                     result.append(net_pnl)
                 elif objective == "max_drawdown_pct":
-                    max_drawdown_pct = max(max_drawdown_pct_list) / len(
-                        max_drawdown_pct_list
-                    )
                     result.append(max_drawdown_pct)
                 elif objective == "speed":
-                    speed = end - start
                     result.append(speed)
+
             return result
         except Exception as e:
             print(f"An error occurred during optimization: {str(e)}")
