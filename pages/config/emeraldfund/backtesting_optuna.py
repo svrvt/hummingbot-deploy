@@ -35,10 +35,23 @@ objective_to_name = {
 objective_name_to_objective = {v: k for k, v in objective_to_name.items()}
 
 
+def render_trial_buttons(trials: List[List[FrozenTrial]], callback):
+    cols = st.columns(len(trials))
+    for trial_idx, trials in enumerate(itertools.zip_longest(*trials)):
+        for col_idx, trial in enumerate(trials):
+            with cols[col_idx]:
+                if trial is not None:
+                    st.button(
+                        trial_to_string(trial, list(objective_to_name.keys())),
+                        key=f"EMTrialButton_{col_idx}_{trial_idx}",
+                        on_click=lambda trial=trial: callback(trial),
+                    )
+
+
 def render_save_best_trial_config(
-    config_base_default: str, trials: List[FrozenTrial], objectives
+    config_base_default: str, trials: List[List[FrozenTrial]]
 ):
-    st.write("### Save the best config")
+    st.write("### Save the optimized config")
     backend_api_client = get_backend_api_client()
     all_configs = backend_api_client.get_all_controllers_config()
     config_bases = set(config_name["id"].split("_")[0] for config_name in all_configs)
@@ -53,30 +66,24 @@ def render_save_best_trial_config(
         config_tag = f"{version}.{int(tag) + 1}"
     else:
         config_tag = "0.1"
-    c1, c2, c3 = st.columns([1, 1, 0.5])
+    c1, c2 = st.columns(2)
     with c1:
         config_base = st.text_input(
             "Config Base", value=config_base, key="EMTrialConfigBase"
         )
     with c2:
-        trial_index = st.selectbox(
-            "Trial",
-            options=range(len(trials)),
-            format_func=lambda x: trial_to_string(trials[x], objectives),
-        )
         config_tag = st.text_input(
             "Config Tag", value=config_tag, key="EMTrialConfigTag"
         )
-    with c3:
 
-        def on_upload_click():
-            config_data = json.loads(trials[trial_index].user_attrs["config"])
-            config_data["id"] = f"{config_base}_{config_tag}"
-            backend_api_client.add_controller_config(config_data)
-            st.session_state.EMBestTrials = None
-            st.success("Config uploaded successfully!")
+    def on_upload_click(trial: FrozenTrial):
+        config_data = json.loads(trial.user_attrs["config"])
+        config_data["id"] = f"{config_base}_{config_tag}"
+        backend_api_client.add_controller_config(config_data)
+        st.session_state.EMBestTrials = None
+        st.success("Config uploaded successfully!")
 
-        st.button("Upload", key="EMTrialUploadConfig", on_click=on_upload_click)
+    render_trial_buttons(trials, on_upload_click)
 
 
 def trial_to_string(trial: Optional[FrozenTrial], objectives) -> str:
@@ -291,8 +298,16 @@ async def run_optimization_fn(
     hyperrankrank_sorters = list(map(lambda x: sorters[x], hyperrankrank_order))
     best_trials = None
     trial_status_table = None
+    early_stop = False
+
+    def early_stop_fn():
+        nonlocal early_stop
+        early_stop = True
 
     for i in range(amount_of_trials):
+        if early_stop:
+            break
+
         trial = study.ask()
         try:
             # Run the async objective function and get the result
@@ -327,12 +342,12 @@ async def run_optimization_fn(
         trial_status_table = trial_status_header + "\n" + "\n".join(trial_status_rows)
         trial_status.write(trial_status_table)
 
+    st.button("Stop Study", key="EMStopStudyBtn", on_click=early_stop_fn)
     study_bar.progress(1.0, "Done!")
-    st.session_state.EMBestTrials = {
-        "trials": best_trials[-1],
-        "final_status": trial_status_table,
-    }
     trial_status.write("")
+    st.session_state.EMBestTrials = {
+        "best_trials": best_trials,
+    }
 
 
 def optuna_section(inputs, backend_api_client, processor):
@@ -541,9 +556,7 @@ def optuna_section(inputs, backend_api_client, processor):
             )
         )
     if st.session_state.get("EMBestTrials", None) is not None:
-        st.write(st.session_state.EMBestTrials["final_status"])
         render_save_best_trial_config(
             st.session_state["default_config"]["id"],
-            st.session_state.EMBestTrials["trials"],
-            hyperrankrank_order,
+            st.session_state.EMBestTrials["best_trials"],
         )
