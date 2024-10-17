@@ -65,6 +65,11 @@ try:
 except Exception:
     st.error(f"Error running the processing code:\n\n```{traceback.format_exc()}```")
 processor = SignalProcessor()
+if hasattr(processor, "get_parameters"):
+    parameters = processor.get_parameters()
+    for k in parameters:
+        param = parameters[k]
+        setattr(processor, k, param["current"])
 processed_candles = processor.process_candles(candles)
 with st.expander("Visualizing Indicators", expanded=True):
     fig = make_subplots(
@@ -141,7 +146,8 @@ with st.expander("Executor Distribution:", expanded=True):
         inputs["total_amount_quote"],
     )
     st.plotly_chart(fig, use_container_width=True)
-optuna_section(inputs, backend_api_client)
+if hasattr(processor, "get_parameters"):
+    optuna_section(inputs, backend_api_client, processor)
 bt_results = backtesting_section(inputs, backend_api_client)
 if bt_results:
     fig = create_backtesting_figure(

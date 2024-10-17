@@ -113,6 +113,12 @@ class EmeraldFundPMMController(MarketMakingControllerBase):
         local_obj = {}
         exec(self.config.processor_code, dict(ta=ta, pd=pd), local_obj)
         self.processor = local_obj["SignalProcessor"]()
+        if hasattr(self.processor, "get_parameters"):
+            parameters = self.processor.get_parameters()
+            for k in parameters:
+                param = parameters[k]
+                setattr(self.processor, k, param["current"])
+
         super().__init__(config, *args, **kwargs)
 
     async def update_processed_data(self):

@@ -161,6 +161,7 @@ async def run_optimization_fn(
                 return fn()
 
         def generate_config(self, trial) -> BacktestingConfig:
+            # TODO: Make sure PMM config works too
             inputs = self.inputs
             processor = self.processor
             parameters = processor.get_parameters()
