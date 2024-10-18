@@ -168,11 +168,13 @@ async def run_optimization_fn(
             for k in parameters:
                 param = parameters[k]
                 kt = type(param["current"])
-                param_max = param["max"]
-                param_min = param["min"]
                 if kt is int:
+                    param_max = param["max"]
+                    param_min = param["min"]
                     param["current"] = trial.suggest_int(k, param_min, param_max)
                 elif kt is float:
+                    param_max = param["max"]
+                    param_min = param["min"]
                     step = None
                     if "step" in param:
                         step = param["step"]
@@ -304,6 +306,11 @@ async def run_optimization_fn(
     def early_stop_fn():
         nonlocal early_stop
         early_stop = True
+        st.session_state.EMBestTrials = {
+            "best_trials": best_trials,
+        }
+
+    st.button("Stop Study", key="EMStopStudyBtn", on_click=early_stop_fn)
 
     for i in range(amount_of_trials):
         if early_stop:
@@ -343,7 +350,6 @@ async def run_optimization_fn(
         trial_status_table = trial_status_header + "\n" + "\n".join(trial_status_rows)
         trial_status.write(trial_status_table)
 
-    st.button("Stop Study", key="EMStopStudyBtn", on_click=early_stop_fn)
     study_bar.progress(1.0, "Done!")
     trial_status.write("")
     st.session_state.EMBestTrials = {
