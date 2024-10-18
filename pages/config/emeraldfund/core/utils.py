@@ -72,9 +72,9 @@ def create_slices_of_start_end_date(
         if current_start >= current_end:
             raise ValueError("The start date must be before the end date")
 
-        # Round the dates to the nearest day
-        result_start = round_to_nearest_day(current_start)
-        result_end = round_to_nearest_day(current_end)
+        # Cap the dates to ensure they are within the start and end range
+        result_start = max(start, min(end, round_to_nearest_day(current_start)))
+        result_end = max(start, min(end, round_to_nearest_day(current_end)))
 
         # Add the slice to the list
         slices.append([result_start, result_end])
@@ -83,3 +83,4 @@ def create_slices_of_start_end_date(
         current_start = current_end + days_gap * 86400
 
     return slices
+
