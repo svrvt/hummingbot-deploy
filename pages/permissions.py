@@ -15,6 +15,11 @@ def public_pages():
         Page("frontend/pages/config/macd_bb_v1/app.py", "MACD_BB V1", "📊"),
         Page("frontend/pages/config/supertrend_v1/app.py", "SuperTrend V1", "👨‍🔬"),
         Page("frontend/pages/config/xemm_controller/app.py", "XEMM Controller", "⚡️"),
+        Section("Emerald Fund", "💚"),
+        Page("frontend/pages/config/emeraldfund/app_pmm.py", "PMM", "💚"),
+        Page(
+            "frontend/pages/config/emeraldfund/app_directional.py", "Directional", "💚"
+        ),
         Section("Data", "💾"),
         Page("frontend/pages/data/download_candles/app.py", "Download Candles", "💹"),
         Section("Community Pages", "👨‍👩‍👧‍👦"),

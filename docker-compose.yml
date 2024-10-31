@@ -11,6 +11,7 @@ services:
     volumes:
       - ./credentials.yml:/home/dashboard/credentials.yml
       - ./pages:/home/dashboard/frontend/pages
+      - ./bots:/backend-api/bots
     networks:
         - emqx-bridge
   backend-api:
