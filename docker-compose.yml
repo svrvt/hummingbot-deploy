@@ -1,7 +1,7 @@
 services:
   dashboard:
-    container_name: dashboard
-    image: hummingbot/dashboard:latest
+    container_name: hummingbot-dashboard
+    image: '{{ item.image }}'
     ports:
       - "8501:8501"
     environment:
@@ -15,23 +15,25 @@ services:
     networks:
         - emqx-bridge
   backend-api:
-    container_name: backend-api
-    image: hummingbot/backend-api:latest
+    container_name: hummingbot-backend-api
+    image: '{{ item.image }}'
     ports:
       - "8000:8000"
     volumes:
       - ./bots:/backend-api/bots
       - /var/run/docker.sock:/var/run/docker.sock
-    env_file:
-      - .env
+    # env_file:
+    #   - .env
     environment:
+      - 'CONFIG_PASSWORD={{ dashboard_password }}'
+      - 'BOTS_PATH={{ run_directory }}'
       - BROKER_HOST=emqx
       - BROKER_PORT=1883
     networks:
       - emqx-bridge
   emqx:
     container_name: hummingbot-broker
-    image: emqx:5
+    image: '{{ item.image }}'
     restart: unless-stopped
     environment:
       - EMQX_NAME=emqx

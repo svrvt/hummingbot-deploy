@@ -11,8 +11,8 @@ Welcome to the Hummingbot Deploy project. This guide will walk you through the s
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/peterwilli/hummingbot-deploy.git --branch=emerald-fund deploy
-   cd deploy
+   # in ansible-config.git
+   git submodule add --branch in-ansible --name hummingbot https://github.com/svrvt/hummingbot-deploy.git docker/hummingbot
    ```
 
 ## Running the Application
@@ -20,7 +20,7 @@ Welcome to the Hummingbot Deploy project. This guide will walk you through the s
 1. **Start and configure the Application**
    - Run the following command to download and start the app.
    - ```bash
-     bash setup.sh
+     ansible-playbook main.yml -t trade
      ```
 2. **Access the dashboard:**
    - Open your web browser and go to `localhost:8501`. Replace `localhost` with the IP of your server if using a cloud server.
