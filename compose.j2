@@ -1,22 +1,22 @@
 services:
   dashboard:
-    container_name: hummingbot-dashboard
-    image: '{{ item.image }}'
+    container_name: dashboard
+    image: {{ item.image_dashboard }}
     ports:
       - "8501:8501"
     environment:
-        - AUTH_SYSTEM_ENABLED=False
-        - BACKEND_API_HOST=backend-api
-        - BACKEND_API_PORT=8000
+      - AUTH_SYSTEM_ENABLED=False
+      - BACKEND_API_HOST=backend-api
+      - BACKEND_API_PORT=8000
     volumes:
       - ./credentials.yml:/home/dashboard/credentials.yml
       - ./pages:/home/dashboard/frontend/pages
       - ./bots:/backend-api/bots
     networks:
-        - emqx-bridge
+      - emqx-bridge
   backend-api:
-    container_name: hummingbot-backend-api
-    image: '{{ item.image }}'
+    container_name: backend-api
+    image: {{ item.image_api }}
     ports:
       - "8000:8000"
     volumes:
@@ -25,15 +25,15 @@ services:
     # env_file:
     #   - .env
     environment:
-      - 'CONFIG_PASSWORD={{ dashboard_password }}'
-      - 'BOTS_PATH={{ run_directory }}'
+      - CONFIG_PASSWORD={{ item.dashboard_password }}
+      - BOTS_PATH={{ item.run_directory }}/{{ item.container }}
       - BROKER_HOST=emqx
       - BROKER_PORT=1883
     networks:
       - emqx-bridge
   emqx:
     container_name: hummingbot-broker
-    image: '{{ item.image }}'
+    image: {{ item.image_emqx }}
     restart: unless-stopped
     environment:
       - EMQX_NAME=emqx
@@ -71,3 +71,5 @@ volumes:
   emqx-data: { }
   emqx-log: { }
   emqx-etc: { }
+
+# vi: ft=yaml
