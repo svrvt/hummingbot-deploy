@@ -25,7 +25,7 @@ services:
     # env_file:
     #   - .env
     environment:
-      - CONFIG_PASSWORD={{ item.dashboard_password }}
+      - CONFIG_PASSWORD={{ item.config_password }}
       - BOTS_PATH={{ item.run_directory }}/{{ item.container }}
       - BROKER_HOST=emqx
       - BROKER_PORT=1883
