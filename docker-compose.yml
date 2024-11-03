@@ -1,19 +1,22 @@
 services:
-  dashboard:
-    container_name: dashboard
-    image: hummingbot/dashboard:latest
-    ports:
-      - "8501:8501"
-    environment:
-        - AUTH_SYSTEM_ENABLED=False
-        - BACKEND_API_HOST=backend-api
-        - BACKEND_API_PORT=8000
-    volumes:
-      - ./credentials.yml:/home/dashboard/credentials.yml
-      - ./pages:/home/dashboard/frontend/pages
-      - ./bots:/backend-api/bots
-    networks:
-        - emqx-bridge
+  # dashboard:
+  #   container_name: dashboard
+  #   image: hummingbot/dashboard:latest
+  #   ports:
+  #     - "8501:8501"
+  #   environment:
+  #       - AUTH_SYSTEM_ENABLED=False
+  #       - BACKEND_API_HOST=backend-api
+  #       - BACKEND_API_PORT=8000
+  #   volumes:
+  #     - ./credentials.yml:/home/dashboard/credentials.yml
+  #     - ./pages:/home/dashboard/frontend/pages
+  #     - ./bots:/backend-api/bots
+  #     # - /home/ru/.local/share/miniconda3/envs/dashboard/lib/python3.10/site-packages/optuna:/opt/conda/envs/dashboard/lib/python3.10/site-packages/optuna
+  #     # - /home/ru/.local/share/miniconda3/envs:/opt/conda/envs
+  #     # - ../../../.local/share/miniconda3/envs/dashboard:/opt/conda/envs/dashboard
+  #   networks:
+  #       - emqx-bridge
   backend-api:
     container_name: backend-api
     image: hummingbot/backend-api:latest

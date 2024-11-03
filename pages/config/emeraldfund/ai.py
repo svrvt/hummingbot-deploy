@@ -1,5 +1,6 @@
 import os
-# from guidance import models, gen
+from guidance import models, gen
+from huggingface_hub import hf_hub_download
 
 current_dir = os.path.dirname(__file__)
 tokenizer_path = os.path.join(current_dir, "tokenizer")
@@ -10,12 +11,21 @@ model = None
 def load_model():
     global model
     if model is None:
-        model = models.LlamaCpp(
-            "/Users/peter/Projects/FedeTest/EmeraldFundLLama.Q4_K_M.gguf",
-            n_ctx=8192,
-            n_gpu_layers=-1,
-            echo=False,
+        # ???"EmeraldFundLLama.Q4_K_M.gguf",
+        repo_id = "hugging-quants/Llama-3.2-1B-Instruct-Q4_K_M-GGUF"
+        filename = "llama-3.2-1b-instruct-q4_k_m.gguf"
+        model_kwargs = {
+            "n_ctx": 8192,
+            "n_gpu_layers": -1,
+            "echo": False,
+            # "verbose": True
+        }
+        downloaded_file = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+            local_dir = f"/home/ru/.cache/lm-studio/models/{repo_id}/",
         )
+        model = models.LlamaCpp(downloaded_file, **model_kwargs)
 
 
 def create_signal_processor(features: str):
