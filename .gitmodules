@@ -1,0 +1,4 @@
+[submodule "dashboard"]
+	path = .images/dashboard
+	url = https://github.com/svrvt/dashboard.git
+	branch = dev
