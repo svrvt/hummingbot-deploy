@@ -2,7 +2,7 @@ services:
   dashboard:
     container_name: dashboard
     # image: hummingbot/dashboard:latest
-    image: hummingbot-deploy-dashboard:latest
+    image: svrvt/dashboard:latest
     # build:
     #   context: .images/dashboard
     #   network: host
