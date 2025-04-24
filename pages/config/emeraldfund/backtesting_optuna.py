@@ -10,8 +10,14 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Any, Dict, List, Optional
 
-from numpy import string_
+from frontend.pages.config.emeraldfund.utils import prepare_install
+prepare_install("optuna", "optuna")
+prepare_install("astor", "astor")
+prepare_install("tokenize", "tokenize")
+prepare_install("yapf", "yapf")
+
 import optuna
+from optuna.trial import FrozenTrial
 import streamlit as st
 from frontend.pages.config.emeraldfund.code_replace import code_replace
 from frontend.pages.config.emeraldfund.core.utils import (
@@ -19,15 +25,14 @@ from frontend.pages.config.emeraldfund.core.utils import (
 )
 from frontend.pages.config.emeraldfund.hyperrankrank import hyperrankrank
 from frontend.st_utils import get_backend_api_client
-from optuna.trial import FrozenTrial
 from plotly.basedatatypes import itertools
-from frontend.pages.config.emeraldfund.utils import prepare_install
 
 prepare_install("streamlit-sortables", "streamlit_sortables")
 from streamlit_sortables import sort_items
 
 objective_to_name = {
     "net_pnl": "Profit",
+    "largest_loss_pct": "Largest loss",
     "max_drawdown_pct": "Max Drawdown",
     "speed": "Time in seconds",
 }
@@ -109,6 +114,7 @@ async def run_optimization_fn(
     amount_of_trials: int,
     date_ranges: List[List[int]],
     add_current_configuration: bool,
+    backtesting_resolution: str
 ):
     import sys
 
@@ -181,6 +187,25 @@ async def run_optimization_fn(
                     param["current"] = trial.suggest_float(
                         k, param_min, param_max, step=step
                     )
+                elif kt is list:
+                    cur_len = len(param['current'])
+                    if cur_len > 0:
+                        first_type = type(param['current'][0])
+                        if first_type is int:
+                            param_max = param["max"]
+                            param_min = param["min"]
+                            param["current"] = []
+                            for i in range(cur_len):
+                                param["current"].append(trial.suggest_int(f"{k}_{i}", param_min, param_max))
+                        elif first_type is float:
+                            param_max = param["max"]
+                            param_min = param["min"]
+                            step = None
+                            if "step" in param:
+                                step = param["step"]
+                            param["current"] = []
+                            for i in range(cur_len):
+                                param["current"].append(trial.suggest_float(f"{k}_{i}", param_min, param_max, step=step))
                 elif kt is str:
                     param["current"] = trial.suggest_categorical(k, param["choices"])
                 else:
@@ -259,7 +284,7 @@ async def run_optimization_fn(
 
             # Return the configuration encapsulated in BacktestingConfig
             return BacktestingConfig(
-                config=config, resolution=interval, date_ranges=date_ranges
+                config=config, resolution=backtesting_resolution, date_ranges=date_ranges
             )
 
     config_generator = EmeraldFundConfigGenerator(
@@ -291,6 +316,9 @@ async def run_optimization_fn(
         "max_drawdown_pct": cmp_to_key(
             lambda x, y: y.user_attrs["max_drawdown_pct"]
             - x.user_attrs["max_drawdown_pct"]
+        ),
+        "largest_loss_pct": cmp_to_key(
+            lambda x, y: y.user_attrs["largest_loss_pct"] - x.user_attrs["largest_loss_pct"]
         ),
         "speed": cmp_to_key(lambda x, y: x.user_attrs["speed"] - y.user_attrs["speed"]),
         "net_pnl": cmp_to_key(
@@ -457,18 +485,22 @@ def optuna_section(inputs, backend_api_client, processor):
         st.write(
             "Objectives give you a custom direction to which your strategy is to be optimized."
         )
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
             objective_net_pnl = st.checkbox(
                 objective_to_name["net_pnl"], value=True, key="EMOptunaObjectiveNetPNL"
             )
         with c2:
+            objective_largest_loss = st.checkbox(
+                objective_to_name["largest_loss_pct"], value=True, key="EMOptunaObjectiveLargestLoss"
+            )
+        with c3:
             objective_max_drawdown = st.checkbox(
                 objective_to_name["max_drawdown_pct"],
                 value=True,
                 key="EMOptunaObjectiveMaxDrawdown",
             )
-        with c3:
+        with c4:
             objective_speed = st.checkbox(
                 objective_to_name["speed"], value=False, key="EMOptunaObjectiveSpeed"
             )
@@ -476,6 +508,8 @@ def optuna_section(inputs, backend_api_client, processor):
         objectives = []
         if objective_net_pnl:
             objectives.append("net_pnl")
+        if objective_largest_loss:
+            objectives.append("largest_loss_pct")
         if objective_max_drawdown:
             objectives.append("max_drawdown_pct")
         if objective_speed:
@@ -560,6 +594,7 @@ def optuna_section(inputs, backend_api_client, processor):
                 int(amount_of_trials),
                 sections,
                 add_current_configuration,
+                backtesting_resolution
             )
         )
     if st.session_state.get("EMBestTrials", None) is not None:

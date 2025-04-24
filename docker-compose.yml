@@ -22,7 +22,7 @@ services:
       - emqx-bridge
   backend-api:
     container_name: backend-api
-    image: hummingbot/backend-api:latest
+    image: hummingbot/backend-api:v2.1.0
     ports:
       - "8000:8000"
     volumes:
