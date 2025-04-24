@@ -21,6 +21,7 @@ def public_pages():
         Section("Community Pages", "👨‍👩‍👧‍👦"),
         Page("frontend/pages/data/token_spreads/app.py", "Token Spreads", "🧙"),
         Page("frontend/pages/data/tvl_vs_mcap/app.py", "TVL vs Market Cap", "🦉"),
+        Page("frontend/pages/performance/bot_performance/app.py", "Strategy Performance", "📈"),
     ]
 
 
