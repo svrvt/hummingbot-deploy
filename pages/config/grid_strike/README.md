@@ -1,80 +1,137 @@
-# MACD BB V1 Configuration Tool
+# Grid Strike Grid Component Configuration Tool
 
-Welcome to the MACD BB V1 Configuration Tool! This tool allows you to create, modify, visualize, backtest, and save configurations for the MACD BB V1 directional trading strategy. Here’s how you can make the most out of it.
+Welcome to the Grid Strike Grid Component Configuration Tool! This tool allows you to create, modify, visualize, and save configurations for the Grid Strike Grid Component trading strategy, which is a simplified version of the Grid Strike strategy focused on a single grid.
 
 ## Features
 
-- **Start from Default Configurations**: Begin with a default configuration or use the values from an existing configuration.
-- **Modify Configuration Values**: Change various parameters of the configuration to suit your trading strategy.
-- **Visualize Results**: See the impact of your changes through visual charts.
-- **Backtest Your Strategy**: Run backtests to evaluate the performance of your strategy.
+- **Simple Grid Configuration**: Configure a single grid with start, end, and limit prices.
+- **Dynamic Price Range Defaults**: Automatically sets price ranges based on current market conditions.
+- **Visual Grid Configuration**: See your grid settings directly on the price chart.
+- **Triple Barrier Risk Management**: Configure take profit, stop loss, and time limit parameters.
 - **Save and Deploy**: Once satisfied, save the configuration to deploy it later.
 
 ## How to Use
 
-### 1. Load Default Configuration
+### 1. Basic Configuration
 
-Start by loading the default configuration for the MACD BB V1 strategy. This provides a baseline setup that you can customize to fit your needs.
+Start by configuring the basic parameters:
+- **ID Prefix**: Prefix for the strategy ID (default: "grid_").
+- **Trading Pair**: Choose the cryptocurrency trading pair (e.g., "BTC-FDUSD").
+- **Connector Name**: Select the trading platform or exchange (e.g., "binance").
+- **Leverage**: Set the leverage ratio for margin/futures trading.
 
-### 2. User Inputs
+### 2. Chart Configuration
 
-Input various parameters for the strategy configuration. These parameters include:
-
-- **Connector Name**: Select the trading platform or exchange.
-- **Trading Pair**: Choose the cryptocurrency trading pair.
-- **Leverage**: Set the leverage ratio. (Note: if you are using spot trading, set the leverage to 1)
-- **Total Amount (Quote Currency)**: Define the total amount you want to allocate for trading.
-- **Max Executors per Side**: Specify the maximum number of executors per side.
-- **Cooldown Time**: Set the cooldown period between trades.
-- **Position Mode**: Choose between different position modes.
+Configure how you want to visualize the market data:
 - **Candles Connector**: Select the data source for candlestick data.
-- **Candles Trading Pair**: Choose the trading pair for candlestick data.
-- **Interval**: Set the interval for candlestick data.
-- **Bollinger Bands Length**: Define the length of the Bollinger Bands.
-- **Standard Deviation Multiplier**: Set the standard deviation multiplier for the Bollinger Bands.
-- **Long Threshold**: Configure the threshold for long positions.
-- **Short Threshold**: Configure the threshold for short positions.
-- **MACD Fast**: Set the fast period for the MACD indicator.
-- **MACD Slow**: Set the slow period for the MACD indicator.
-- **MACD Signal**: Set the signal period for the MACD indicator.
-- **Risk Management**: Set parameters for stop loss, take profit, time limit, and trailing stop settings.
+- **Interval**: Choose the timeframe for the candlesticks (1m to 1d).
+- **Days to Display**: Select how many days of historical data to show.
 
-### 3. Visualize Indicators
+### 3. Grid Configuration
 
-Visualize the Bollinger Bands and MACD on the OHLC (Open, High, Low, Close) chart to see the impact of your configuration. Here are some hints to help you fine-tune the indicators:
+Configure your grid parameters:
+- **Side**: Choose BUY or SELL for the grid.
+- **Start Price**: The price where the grid begins.
+- **End Price**: The price where the grid ends.
+- **Limit Price**: A price limit that will stop the strategy.
+- **Min Spread Between Orders**: Minimum price difference between orders.
+- **Min Order Amount (Quote)**: Minimum size for individual orders.
+- **Maximum Open Orders**: Maximum number of active orders in the grid.
 
-- **Bollinger Bands Length**: A larger length will make the Bollinger Bands wider and smoother, while a smaller length will make them narrower and more volatile.
-- **Long Threshold**: This is a reference to the Bollinger Band. A value of 0 means the lower band, and a value of 1 means the upper band. For example, if the long threshold is 0, long positions will only be taken if the price is below the lower band.
-- **Short Threshold**: Similarly, a value of 1.1 means the price must be above the upper band by 0.1 of the band’s range to take a short position.
-- **Thresholds**: The closer you set the thresholds to 0.5, the more trades will be executed. The farther away they are, the fewer trades will be executed.
-- **MACD**: The MACD is used to determine trend changes. If the MACD value is negative and the histogram becomes positive, it signals a market trend up, suggesting a long position. Conversely, if the MACD value is positive and the histogram becomes negative, it signals a market trend down, suggesting a short position.
+### 4. Order Configuration
 
-### Combining MACD and Bollinger Bands for Trade Signals
+Fine-tune your order placement:
+- **Max Orders Per Batch**: Maximum number of orders to place at once.
+- **Order Frequency**: Time between order placements in seconds.
+- **Activation Bounds**: Price deviation to trigger updates.
 
-The MACD BB V1 strategy uses the MACD to identify potential trend changes and the Bollinger Bands to filter these signals:
+### 5. Triple Barrier Configuration
 
-- **Long Signal**: The MACD value must be negative, and the histogram must become positive, indicating a potential uptrend. The price must also be below the long threshold of the Bollinger Bands (e.g., below the lower band if the threshold is 0).
-- **Short Signal**: The MACD value must be positive, and the histogram must become negative, indicating a potential downtrend. The price must also be above the short threshold of the Bollinger Bands (e.g., above the upper band if the threshold is 1.1).
+Set up risk management parameters:
+- **Open Order Type**: The type of order to open positions (e.g., MARKET, LIMIT).
+- **Take Profit**: Price movement percentage for take profit.
+- **Stop Loss**: Price movement percentage for stop loss.
+- **Time Limit**: Time limit for orders in hours.
+- **Order Type Settings**: Configure order types for each barrier.
 
-This combination ensures that you only take trend-following trades when the market is already deviated from the mean, enhancing the effectiveness of your trading strategy.
+### 6. Advanced Configuration
 
-### 4. Executor Distribution
+Additional settings:
+- **Position Mode**: Choose between HEDGE or ONE-WAY.
+- **Strategy Time Limit**: Maximum duration for the entire strategy in hours.
+- **Manual Kill Switch**: Option to enable manual kill switch.
 
-The total amount in the quote currency will be distributed among the maximum number of executors per side. For example, if the total amount quote is 1000 and the max executors per side is 5, each executor will have 200 to trade. If the signal is on, the first executor will place an order and wait for the cooldown time before the next one executes, continuing this pattern for the subsequent orders.
+## Understanding Grid Strike Grid Component
 
-### 5. Backtesting
+The Grid Strike Grid Component strategy creates a single grid of orders within a specified price range. Here's how it works:
 
-Run backtests to evaluate the performance of your configured strategy. The backtesting section allows you to:
+### Grid Mechanics
+- The strategy places orders uniformly between the start and end prices
+- BUY grids place buy orders from start (higher) to end (lower) prices
+- SELL grids place sell orders from start (lower) to end (higher) prices
+- The limit price serves as an additional safety boundary
 
-- **Process Data**: Analyze historical trading data.
-- **Visualize Results**: See performance metrics and charts.
-- **Evaluate Accuracy**: Assess the accuracy of your strategy’s predictions and trades.
-- **Understand Close Types**: Review different types of trade closures and their frequencies.
+### Order Placement
+- Orders are placed within the grid based on the min spread between orders
+- The amount per order is calculated based on the total amount specified
+- Orders are automatically adjusted when price moves beyond activation bounds
 
-### 6. Save Configuration
+### Visual Indicators
+- Green lines represent the start and end prices
+- Red line represents the limit price
+- Candlestick chart shows the market price action
 
-Once you are satisfied with your configuration and backtest results, save the configuration for future use in the Deploy tab. This allows you to deploy the same strategy later without having to reconfigure it from scratch.
+## Example Configuration
 
----
+Here's a sample configuration for a BTC-FDUSD grid:
 
-Feel free to experiment with different configurations to find the optimal setup for your trading strategy. Happy trading!
+```yaml
+id: grid_btcfdusd
+controller_name: grid_strike
+controller_type: generic
+total_amount_quote: 200
+manual_kill_switch: null
+candles_config: []
+leverage: 75
+position_mode: HEDGE
+connector_name: binance
+trading_pair: BTC-FDUSD
+side: 1
+start_price: 84000
+end_price: 84300
+limit_price: 83700
+min_spread_between_orders: 0.0001
+min_order_amount_quote: 5
+max_open_orders: 40
+max_orders_per_batch: 1
+order_frequency: 2
+activation_bounds: 0.01
+triple_barrier_config:
+  open_order_type: 3
+  stop_loss: null
+  stop_loss_order_type: 1
+  take_profit: 0.0001
+  take_profit_order_type: 3
+  time_limit: 21600
+  time_limit_order_type: 1
+time_limit: 172800
+```
+
+## Best Practices
+
+1. **Grid Placement**
+   - For BUY grids, set start price above end price
+   - For SELL grids, set end price above start price
+   - Set limit price as a safety boundary where you want to stop the strategy
+
+2. **Amount Management**
+   - Set total amount based on your risk tolerance
+   - Configure min order amount to ensure meaningful trade sizes
+
+3. **Grid Density**
+   - Adjust min spread between orders based on the asset's volatility
+   - Set max open orders to control grid density
+
+4. **Risk Management**
+   - Use triple barrier parameters to manage risk for individual positions
+   - Set appropriate time limits for both positions and the overall strategy 
