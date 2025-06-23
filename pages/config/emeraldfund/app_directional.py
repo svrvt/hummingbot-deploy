@@ -6,26 +6,21 @@ from plotly.subplots import make_subplots
 import traceback
 import pandas_ta as ta  # noqa: F401
 import pandas as pd
-
+import numpy as np
 from backend.services.backend_api_client import BackendAPIClient
 from CONFIG import BACKEND_API_HOST, BACKEND_API_PORT
 from frontend.components.config_loader import get_default_config_loader
-from frontend.components.executors_distribution import get_executors_distribution_inputs
 from frontend.components.save_config import render_save_config
 
 # Import submodules
 from frontend.components.backtesting import backtesting_section
-from frontend.pages.config.emeraldfund.utils import get_market_making_traces
 from frontend.pages.config.emeraldfund.user_inputs import user_inputs
-from frontend.pages.config.utils import get_max_records, get_candles
+from frontend.pages.config.utils import get_candles
 from frontend.st_utils import initialize_st_page
 from frontend.st_utils import initialize_st_page, get_backend_api_client
 from frontend.visualization import theme
 from frontend.visualization.backtesting import create_backtesting_figure
 from frontend.visualization.candles import get_candlestick_trace
-from frontend.visualization.executors_distribution import (
-    create_executors_distribution_traces,
-)
 from frontend.visualization.backtesting_metrics import (
     render_backtesting_metrics,
     render_close_types,
@@ -41,16 +36,19 @@ backend_api_client = get_backend_api_client()
 
 # Page content
 st.text(
-    "This tool will let you create a config for PMM Emerald Fund, backtest and upload it to the Backend API."
+    "This tool will let you create a config for Directional Emerald Fund, backtest and upload it to the Backend API."
 )
+
 get_default_config_loader("directional_emeraldfund")
-# Get user inputs
 inputs = user_inputs("directional")
 st.session_state["default_config"].update(inputs)
+
+# Get user inputs
 st.write("### Visualize")
 days_to_visualize = st.number_input(
     "Days to Visualize", min_value=1, max_value=365, value=3
 )
+
 # Load candle data
 candles = get_candles(
     connector_name=inputs["candles_connector"],
@@ -58,10 +56,12 @@ candles = get_candles(
     interval=inputs["interval"],
     days=days_to_visualize,
 )
+
 try:
     exec(inputs["processor_code"])
 except Exception:
     st.error(f"Error running the processing code:\n\n```{traceback.format_exc()}```")
+
 processor = SignalProcessor()
 if hasattr(processor, "get_parameters"):
     parameters = processor.get_parameters()
@@ -73,8 +73,19 @@ processed_candles = processor.process_candles(candles)
 
 def get_custom_candle_trace_additions(candles, placement: str = "overlay"):
     result = []
+    colors = [
+        "blue",
+        "green",
+        "red",
+        "purple",
+        "orange",
+        "cyan",
+        "magenta",
+        "yellow",
+        "gray",
+    ]
 
-    for col in candles.columns:
+    for index, col in enumerate(candles.columns):
         key = f"line_{placement}"
         if col.startswith(key):
             result.append(
@@ -82,7 +93,7 @@ def get_custom_candle_trace_additions(candles, placement: str = "overlay"):
                     x=candles.index,
                     y=candles[col],
                     name=col[len(key) + 1 :],
-                    line=dict(color="blue"),
+                    line=dict(color=colors[index % len(colors)]),
                 )
             )
 
@@ -104,9 +115,14 @@ with st.expander("Visualizing Indicators", expanded=True):
     )
 
     add_traces_to_fig(fig, [get_candlestick_trace(candles)], row=1, col=1)
-    add_traces_to_fig(fig, get_custom_candle_trace_additions(candles), row=1, col=1)
     add_traces_to_fig(
-        fig, get_custom_candle_trace_additions(candles, "separate"), row=2, col=1
+        fig, get_custom_candle_trace_additions(processed_candles), row=1, col=1
+    )
+    add_traces_to_fig(
+        fig,
+        get_custom_candle_trace_additions(processed_candles, "separate"),
+        row=2,
+        col=1,
     )
     add_traces_to_fig(fig, [get_volume_trace(candles)], row=3, col=1)
     add_traces_to_fig(
