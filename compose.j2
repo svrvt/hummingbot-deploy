@@ -2,6 +2,7 @@ services:
   dashboard:
     container_name: dashboard
     image: {{ item.image_dashboard }}
+    ports:
       - "8501:8501"
     environment:
         - AUTH_SYSTEM_ENABLED=False
